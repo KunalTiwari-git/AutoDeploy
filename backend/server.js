@@ -41,7 +41,8 @@ app.post("/deploy", async (req, res) => {
   }
 
   const buildId = Date.now().toString();
-  const buildDir = path.join("/tmp", "builds", buildId);
+  const os = require("os");
+  const buildDir = path.join(os.tmpdir(), "builds", buildId);
 
   res.json({ buildId });
 
