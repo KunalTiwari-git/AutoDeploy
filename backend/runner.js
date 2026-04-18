@@ -34,7 +34,7 @@ function runContainer(imageName, port, send) {
 
     try {
       execSync(
-        `docker run -d --name ${containerName} -p ${port}:3000 ${imageName}`,
+        `docker run -d --name ${containerName} -p ${port}:5000 -e PORT=5000 ${imageName}`
       );
       send(`Container started: ${containerName}`);
       send(`App running at http://localhost:${port}`);

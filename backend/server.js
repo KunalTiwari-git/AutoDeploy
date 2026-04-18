@@ -40,16 +40,16 @@ app.get("/", (req, res) => {
   res.json({ status: "AutoDeploy backend running" });
 });
 
-app.get("/deploys", (req, res) => {
-  const deploys = getAllDeploys();
-  res.json(deploys);
-});
+app.get('/deploys', async (req, res) => {
+  const deploys = await getAllDeploys()
+  res.json(deploys)
+})
 
-app.get("/deploys/:id", (req, res) => {
-  const deploy = getDeployById(req.params.id);
-  if (!deploy) return res.status(404).json({ error: "Deploy not found" });
-  res.json(deploy);
-});
+app.get('/deploys/:id', async (req, res) => {
+  const deploy = await getDeployById(req.params.id)
+  if (!deploy) return res.status(404).json({ error: 'Deploy not found' })
+  res.json(deploy)
+})
 
 app.post("/deploy", (req, res) => {
   const { repoUrl } = req.body;
@@ -157,19 +157,18 @@ app.post("/deploy", (req, res) => {
   }, 400);
 });
 
-app.post("/stop/:id", (req, res) => {
-  const deploy = getDeployById(req.params.id);
-  if (!deploy) return res.status(404).json({ error: "Deploy not found" });
-
+app.post('/stop/:id', async (req, res) => {
+  const deploy = await getDeployById(req.params.id)
+  if (!deploy) return res.status(404).json({ error: 'Deploy not found' })
   try {
-    const { stopExistingContainer } = require("./runner");
-    stopExistingContainer(deploy.container_name);
-    updateDeploy(deploy.id, "stopped", null, null);
-    res.json({ message: "Container stopped" });
+    const { stopExistingContainer } = require('./runner')
+    stopExistingContainer(deploy.container_name)
+    await updateDeploy(deploy.id, 'stopped', null, null)
+    res.json({ message: 'Container stopped' })
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message })
   }
-});
+})
 
 const PORT = 4000;
 server.listen(PORT, () => {

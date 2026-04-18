@@ -9,15 +9,14 @@ EXPOSE 3000
 CMD ["node", "index.js"]`;
   }
 
-  if (lang === "python") {
-    return `FROM python:3.11-slim
+  if (lang === 'python') {
+  return `FROM python:3.11-slim
 WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
+RUN if [ -f requirements.txt ]; then pip install --no-cache-dir -r requirements.txt; fi
 EXPOSE 5000
-CMD ["python", "app.py"]`;
-  }
+CMD ["python", "main.py"]`
+}
 
   if (lang === "go") {
     return `FROM golang:1.21-alpine AS build
