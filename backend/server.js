@@ -144,7 +144,7 @@ app.post("/deploy", (req, res) => {
 
       const port = findAvailablePort();
 
-      const { containerName } = await runContainer(imageName, port, send);
+      const { containerName } = await runContainer(imageName, port, send , lang);
 
       updateDeploy(buildId, "live", port, containerName);
 
