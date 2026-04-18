@@ -5,9 +5,18 @@ const { WebSocketServer } = require("ws");
 const { execSync, spawn } = require("child_process");
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
+const { v4: uuidv4 } = require("uuid");
 
 const { detectLanguage } = require("./detector");
 const { generateDockerfile } = require("./dockerfile");
+const { runContainer, findAvailablePort } = require("./runner");
+const {
+  saveDeploy,
+  updateDeploy,
+  getAllDeploys,
+  getDeployById,
+} = require("./db");
 
 const app = express();
 app.use(cors());
@@ -21,27 +30,35 @@ const clients = {};
 wss.on("connection", (ws, req) => {
   const buildId = req.url.replace("/", "");
   clients[buildId] = ws;
-  console.log(`WebSocket connected for build: ${buildId}`);
-
+  console.log(`WebSocket connected: ${buildId}`);
   ws.on("close", () => {
     delete clients[buildId];
-    console.log(`WebSocket closed for build: ${buildId}`);
   });
 });
 
 app.get("/", (req, res) => {
-  res.json({ status: "AutoDeploy backend is running!" });
+  res.json({ status: "AutoDeploy backend running" });
 });
 
-app.post("/deploy", async (req, res) => {
+app.get("/deploys", (req, res) => {
+  const deploys = getAllDeploys();
+  res.json(deploys);
+});
+
+app.get("/deploys/:id", (req, res) => {
+  const deploy = getDeployById(req.params.id);
+  if (!deploy) return res.status(404).json({ error: "Deploy not found" });
+  res.json(deploy);
+});
+
+app.post("/deploy", (req, res) => {
   const { repoUrl } = req.body;
 
   if (!repoUrl || !repoUrl.startsWith("https://github.com/")) {
     return res.status(400).json({ error: "Please provide a valid GitHub URL" });
   }
 
-  const buildId = Date.now().toString();
-  const os = require("os");
+  const buildId = uuidv4();
   const buildDir = path.join(os.tmpdir(), "builds", buildId);
 
   res.json({ buildId });
@@ -57,9 +74,8 @@ app.post("/deploy", async (req, res) => {
 
     function sendError(message) {
       send(`ERROR: ${message}`);
-      if (ws && ws.readyState === 1) {
-        ws.close();
-      }
+      updateDeploy(buildId, "failed", null, null);
+      if (ws && ws.readyState === 1) ws.close();
     }
 
     try {
@@ -84,45 +100,75 @@ app.post("/deploy", async (req, res) => {
         );
       }
 
+      saveDeploy(buildId, repoUrl, lang);
+
       const dockerfile = generateDockerfile(lang);
       fs.writeFileSync(path.join(buildDir, "Dockerfile"), dockerfile);
       send("Dockerfile written!");
 
-      send(
-        "Building Docker image... (this can take 1-2 minutes the first time)",
-      );
+      send("Building Docker image... (first time takes 1-2 minutes)");
 
       const imageName = `deploy-${buildId}`;
-      const dockerBuild = spawn("docker", ["build", "-t", imageName, buildDir]);
 
-      dockerBuild.stdout.on("data", (data) => {
-        const lines = data
-          .toString()
-          .split("\n")
-          .filter((l) => l.trim());
-        lines.forEach((line) => send(line));
+      await new Promise((resolve, reject) => {
+        const dockerBuild = spawn("docker", [
+          "build",
+          "-t",
+          imageName,
+          buildDir,
+        ]);
+
+        dockerBuild.stdout.on("data", (data) => {
+          data
+            .toString()
+            .split("\n")
+            .filter((l) => l.trim())
+            .forEach((line) => send(line));
+        });
+
+        dockerBuild.stderr.on("data", (data) => {
+          data
+            .toString()
+            .split("\n")
+            .filter((l) => l.trim())
+            .forEach((line) => send(line));
+        });
+
+        dockerBuild.on("close", (code) => {
+          if (code === 0) resolve();
+          else reject(new Error("Docker build failed"));
+        });
       });
 
-      dockerBuild.stderr.on("data", (data) => {
-        const lines = data
-          .toString()
-          .split("\n")
-          .filter((l) => l.trim());
-        lines.forEach((line) => send(line));
-      });
+      send("Image built successfully!");
 
-      dockerBuild.on("close", (code) => {
-        if (code === 0) {
-          send(`Image built successfully: ${imageName}`);
-          send("BUILD_COMPLETE");
-        } else {
-          sendError("Docker build failed. Check the logs above.");
-        }
-      });
+      const port = findAvailablePort();
+
+      const { containerName } = await runContainer(imageName, port, send);
+
+      updateDeploy(buildId, "live", port, containerName);
+
+      send(`DEPLOY_COMPLETE:${port}`);
+
+      if (ws && ws.readyState === 1) ws.close();
     } catch (err) {
       sendError(err.message);
     }
   }, 400);
+});
+
+app.post("/stop/:id", (req, res) => {
+  const deploy = getDeployById(req.params.id);
+  if (!deploy) return res.status(404).json({ error: "Deploy not found" });
+
+  try {
+    const { stopExistingContainer } = require("./runner");
+    stopExistingContainer(deploy.container_name);
+    updateDeploy(deploy.id, "stopped", null, null);
+    res.json({ message: "Container stopped" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 const PORT = 4000;
