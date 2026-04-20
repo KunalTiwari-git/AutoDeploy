@@ -21,7 +21,7 @@ function getInternalPort(lang) {
 }
 
 function runContainer(imageName, port, send, lang) {
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
     const containerName = imageName.replace('deploy-', 'container-')
     stopExistingContainer(containerName)
 
@@ -33,8 +33,7 @@ function runContainer(imageName, port, send, lang) {
         `docker run -d --name ${containerName} -p ${port}:${internalPort} -e PORT=${internalPort} ${imageName}`
       )
 
-      // wait 2 seconds then check if container is still running
-      execSync('ping -n 3 127.0.0.1 > nul', { stdio: 'ignore' })
+      await new Promise(resolve => setTimeout(resolve, 2000))
 
       const status = getContainerStatus(containerName)
       if (status === 'running') {
@@ -42,7 +41,6 @@ function runContainer(imageName, port, send, lang) {
         send(`App running at http://localhost:${port}`)
         resolve({ containerName, port })
       } else {
-        // container exited, get logs to show why
         try {
           const logs = execSync(`docker logs ${containerName}`).toString().trim()
           reject(new Error(`Container exited immediately. Logs: ${logs}`))
